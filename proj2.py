@@ -61,77 +61,103 @@ theta = np.zeros((P+1, 1))
 # reshape y_train
 y_train = y_train.to_numpy().reshape((N, 1))
 
-# FOR TESTING
-# x_train = np.array([[1, 1, 1, 1, 1, 1],
-#                     [0, 2, 4, 6, 8, 10],
-#                     [0, 2, 0, 2, 0, 2]]).T
-# y_train = np.array([[0, 1, 0, 1, 0, 1]]).T
-# N, P = x_train.shape
-# P -= 1
-# theta = np.zeros((P+1, 1))
-# END TESTING
 
-# X: N x (P+1)
-# y: N x 1
-# theta: (P+1) x 1
+# logistic classifier using SGD w/ Adam optimization
+class LogisticClassifier:
 
-# hypothesis function
-#y_hat
-# returns N x 1
-def h(theta, X):
-    return 1 / (1 + np.exp(-X @ theta))
+    # X: NxP ndarray (features)
+    # y: Nx1 ndarray (labels)
+    # lam: regularization coefficient
+    # alpha: (maximum) learning rate
+    def __init__(self, X, y, lam=0., alpha=0.001):
+        N, P = X.shape
 
-# update function
-# theta_j := theta_j + alpha(y_i -h_theta(x_i)) * x_i_j
-# returns (P+1)
-#SGD =  j+α(y(i)−hθ(x(i)))x(i)j
-def grad(theta, X, y):
-    # return gradient of l(theta, X, y) w.r.t. theta
-    return X.T @ (y - h(theta, X)) - 2 * lam * np.linalg.norm(theta)
+        self._lam = lam
+        self._alpha = alpha
 
-# log likelihood
-def l(theta, X, y, lam):
-    return y.T @ np.log(h(theta, X)) + (1 - y).T @ np.log(1 - h(theta, X)) - (lam * np.linalg.norm(theta ** 2))
+        # add column of 1's to X
+        X = np.hstack((np.ones((N, 1)), X))
 
-# percent classified wrong
-def pctWrong(theta, X, y):
-    return np.sum(abs(np.round(h(theta, X)) - y)) / N
-   # thetaJ = SGD(thetaJ, alpha, train_Y, hypothesis, train_X)  - 2* lam * thetaJ
-   
-# alpha = 0.001
-# lam = .0000
-# for i in range(10000):
-#     #weights are the theta's
-#     # print(grad(theta, x_train, y_train))
-#     theta += alpha * grad(theta, x_train, y_train)
-#     if i % 1000 == 0:
-#         # alpha *= 0.95
-#         print(f'iteration {i}\tclassified wrong: {np.around(pctWrong(theta, x_train, y_train),2)}\tlog likelihood: {np.around(l(theta, x_train, y_train, 0),2)}')
+        # randomly split data into training, validation, test
+        indices = np.arange(N)
+        np.random.shuffle(indices)
+        split1, split2 = int(N*0.8), int(N*0.9)
+        self._subsets = {
+            'train': {
+                'X': X[indices[:split1],:],
+                'y': y[indices[:split1],:]
+            },
+            'validate': {
+                'X': X[indices[split1:split2],:],
+                'y': y[indices[split1:split2],:]
+            },
+            'test': {
+                'X': X[indices[split2:],:],
+                'y': y[indices[split2:],:]
+            }
+        }
 
-alpha = 0.001
-lam = .0000
+        # generate initial weight vector
+        self._theta = np.zeros((P+1, 1))
 
-# adam optimizer
-beta1 = 0.9
-beta2 = 0.999
-ztheta = np.zeros_like(theta)
-zthetaSquared = np.zeros_like(theta)
-ep = 0.0001
+        # adam optimizer
+        self._beta1 = 0.9
+        self._beta2 = 0.999
+        self._ztheta = np.zeros_like(self._theta)
+        self._zthetaSquared = np.zeros_like(self._theta)
+        self._ep = 0.0001
 
-for i in range(10000):
-    thetaGrad = grad(theta, x_train, y_train)
-    ztheta = beta1 * ztheta + (1 - beta1) * thetaGrad
-    zthetaSquared = beta2 * zthetaSquared + (1 - beta2) * thetaGrad ** 2
+    # hypothesis function; uses trained theta
+    #y_hat
+    # returns N x 1
+    def h(self, X):
+        return 1 / (1 + np.exp(-X @ self._theta))
 
-    theta += alpha * ztheta / (np.sqrt(zthetaSquared) + ep)
+    # update function
+    # theta_j := theta_j + alpha(y_i -h_theta(x_i)) * x_i_j
+    # returns (P+1)
+    #SGD =  j+α(y(i)−hθ(x(i)))x(i)j
+    def grad(self, X, y):
+        # return gradient of l(theta, X, y) w.r.t. theta
+        return X.T @ (y - self.h(X)) - 2 * self._lam * np.linalg.norm(self._theta)
 
-    # periodic logging info
-    if i % 1000 == 0:
-        print(f'iteration {i}\tclassified wrong: {np.around(pctWrong(theta, x_train, y_train),2)}\tlog likelihood: {np.around(l(theta, x_train, y_train, 0),2)}')
+    # log likelihood
+    def l(self, X, y):
+        return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lam * np.linalg.norm(self._theta ** 2))
+
+    # percent classified wrong on training subset
+    def pctWrong(self):
+        X, y = self._subsets['test']['X'], self._subsets['test']['y']
+        N, _ = X.shape
+        return np.sum(abs(np.round(self.h(X)) - y)) / N
+
+    def step(self):
+        # update adam moments
+        thetaGrad = self.grad(self._subsets['train']['X'], self._subsets['train']['y'])
+        #weighted average of the gradient
+        self._ztheta = self._beta1 * self._ztheta + (1 - self._beta1) * thetaGrad
+        #weighted average of the square gradient
+        self._zthetaSquared = self._beta2 * self._zthetaSquared + (1 - self._beta2) * thetaGrad ** 2
+
+        # adam update rule
+        self._theta += self._alpha * self._ztheta / (np.sqrt(self._zthetaSquared) + self._ep)
+
+    def train(self, iterations=10000):
+        for i in range(iterations):
+            self.step()
+
+            if i % 1000 == 0:
+                print(f'iteration {i}\tclassified wrong: {np.around(self.pctWrong(),2)}\tlog likelihood: {np.around(self.l(x_train, y_train),2)}')
+
+    def theta(self):
+        return self._theta
 
 
+### PART 1: RECREATE TABLE 4.2
+X = dataset.drop(['chd'], axis=1).to_numpy()
+y = dataset.loc[:,'chd'].to_numpy().reshape(-1, 1)
+classifier = LogisticClassifier(X, y)
+classifier.train()
+print(f'theta: {classifier.theta()}\n% classified wrong: {np.around(classifier.pctWrong() * 100)}%')
 
-print('theta', np.around(theta, 3))
-
-# print(np.hstack((h(theta, x_train), y_train)))
-# print(x_train, y_train, h(theta, x_train))
+### PART 2: STEPWISE
