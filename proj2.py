@@ -98,6 +98,7 @@ class LogisticClassifier:
         }
 
         # generate initial weight vector
+        # TODO: separate the bias from 
         self._theta = np.zeros((P+1, 1))
 
         # adam optimizer
@@ -126,12 +127,12 @@ class LogisticClassifier:
         return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lam * np.linalg.norm(self._theta ** 2))
 
     # percent classified wrong on training subset
-    def pctWrong(self):
-        X, y = self._subsets['test']['X'], self._subsets['test']['y']
+    def pctWrong(self, subset='test'):
+        X, y = self._subsets[subset]['X'], self._subsets[subset]['y']
         N, _ = X.shape
         return np.sum(abs(np.round(self.h(X)) - y)) / N
 
-    def step(self):
+    def step(self, includeMask=None):
         # update adam moments
         thetaGrad = self.grad(self._subsets['train']['X'], self._subsets['train']['y'])
         #weighted average of the gradient
@@ -142,9 +143,13 @@ class LogisticClassifier:
         # adam update rule
         self._theta += self._alpha * self._ztheta / (np.sqrt(self._zthetaSquared) + self._ep)
 
-    def train(self, iterations=10000):
+        # exclude certain features
+        if includeMask is not None:
+            self._theta *= includeMask
+
+    def train(self, iterations=10000, includeMask=None):
         for i in range(iterations):
-            self.step()
+            self.step(includeMask)
 
             if i % 1000 == 0:
                 print(f'iteration {i}\tclassified wrong: {np.around(self.pctWrong(),2)}\tlog likelihood: {np.around(self.l(x_train, y_train),2)}')
@@ -152,12 +157,32 @@ class LogisticClassifier:
     def theta(self):
         return self._theta
 
+    def stepWise(self):
+        _, P = self._subsets['train']['X'].shape
+        P -= 1
+
+        # list of features to exclude
+        exclude = list(range(P))
+        # list of features to include
+        includeMask = np.zeros((P+1, 1))
+        includeMask[0] = 1
+
+        for feature in exclude:
+            # copy includeMask into currentIncludeMask, unmask feature
+            currentIncludeMask = np.array(includeMask)
+            currentIncludeMask[feature+1] = 1
+
+            # train on currentIncludeMask
+            self._theta = np.zeros((P+1, 1))
+            self.train(includeMask=currentIncludeMask)
+            print(self._theta)
 
 ### PART 1: RECREATE TABLE 4.2
 X = dataset.drop(['chd'], axis=1).to_numpy()
 y = dataset.loc[:,'chd'].to_numpy().reshape(-1, 1)
 classifier = LogisticClassifier(X, y)
-classifier.train()
-print(f'theta: {classifier.theta()}\n% classified wrong: {np.around(classifier.pctWrong() * 100)}%')
+# classifier.train()
+# print(f'theta: {classifier.theta()}\n% classified wrong: {np.around(classifier.pctWrong() * 100)}%')
 
 ### PART 2: STEPWISE
+classifier.stepWise()
