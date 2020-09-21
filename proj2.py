@@ -215,8 +215,8 @@ class LogisticClassifier:
         return self._theta
 
     def l2Regularize(self):
-        lams = np.logspace(-20, 10, 100)
-
+        lams = np.logspace(-20, 1, 100)
+        
         # standardize
         self._subsets['train']['X'] = preprocessing.StandardScaler().fit(self._subsets['train']['X']).transform(self._subsets['train']['X'])
         self._subsets['validate']['X'] = preprocessing.StandardScaler().fit(self._subsets['validate']['X']).transform(self._subsets['validate']['X'])
