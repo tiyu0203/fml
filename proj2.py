@@ -70,11 +70,11 @@ class LogisticClassifier:
     # y: Nx1 ndarray (labels)
     # lam: regularization coefficient
     # alpha: (maximum) learning rate
-    def __init__(self, X, y, lam=0., alpha=0.001):
+    def __init__(self, X, y, alpha=0.01):
         N, P = X.shape
 
-        self._lam = lam
         self._alpha = alpha
+        self._lambda = 0
 
         # add column of 1's to X
         X = np.hstack((np.ones((N, 1)), X))
@@ -120,13 +120,15 @@ class LogisticClassifier:
     # returns (P+1)
     # SGD =  j+α(y(i)−hθ(x(i)))x(i)j
     def grad(self, X, y):
-        # return gradient of l(theta, X, y) w.r.t. theta
-        return X.T @ (y - self.h(X)) - 2 * self._lam * np.linalg.norm(self._theta)
+        # don't penalize the bias
+        return X.T @ (y - self.h(X)) - 2 * self._lambda * np.vstack((np.zeros((1,1)), self._theta[1:,:]))
 
+    # WE DON'T USE THIS FUNCTION ANYWHERE
     # log likelihood
-    def l(self, subset):
-        X, y = self._subsets[subset]['X'], self._subsets[subset]['y']
-        return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lam * np.linalg.norm(self._theta ** 2))
+    # def l(self, subset):
+    #     X, y = self._subsets[subset]['X'], self._subsets[subset]['y']
+    #     print('TESTING SHAPE', y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lambda * (self._theta[1:,:] ** 2)).shape)
+    #     return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lambda * (self._theta[1:,:] ** 2))
 
     # percent classified wrong on training subset
     def pctWrong(self, subset='test'):
@@ -136,30 +138,26 @@ class LogisticClassifier:
 
     def step(self, includeMask=None):
         # update adam moments
-        thetaGrad = self.grad(
-            self._subsets['train']['X'], self._subsets['train']['y'])
+        thetaGrad = self.grad(self._subsets['train']['X'], self._subsets['train']['y'])
         # weighted average of the gradient
-        self._ztheta = self._beta1 * self._ztheta + \
-            (1 - self._beta1) * thetaGrad
+        self._ztheta = self._beta1 * self._ztheta + (1 - self._beta1) * thetaGrad
         # weighted average of the square gradient
-        self._zthetaSquared = self._beta2 * self._zthetaSquared + \
-            (1 - self._beta2) * thetaGrad ** 2
+        self._zthetaSquared = self._beta2 * self._zthetaSquared + (1 - self._beta2) * thetaGrad ** 2
 
         # adam update rule
-        self._theta += self._alpha * self._ztheta / \
-            (np.sqrt(self._zthetaSquared) + self._ep)
+        self._theta += self._alpha * self._ztheta / (np.sqrt(self._zthetaSquared) + self._ep)
 
         # exclude certain features
         if includeMask is not None:
             self._theta *= includeMask
 
-    def train(self, iterations=10000, includeMask=None):
+    def train(self, iterations=2000, includeMask=None):
+        self._theta = np.zeros((self._subsets['train']['X'].shape[1], 1))
         for i in range(iterations):
             self.step(includeMask)
 
-            if i % 1000 == 0:
-                print(
-                    f'iteration {i}\tclassified wrong: {np.around(self.pctWrong(),2)}\tlog likelihood: {np.around(self.l(subset="train"),2)}')
+            # if i % 1000 == 0:
+            #     print(f'iteration {i}\tclassified wrong: {np.around(self.pctWrong(),2)}\tlog likelihood: {np.around(self.l(subset="train"),2)}')
 
     def theta(self):
         return self._theta
@@ -176,11 +174,8 @@ class LogisticClassifier:
         includeMask[0] = 1
 
         pctWrongs = np.zeros((P+1, 1))
-
-        # TODO: calculate AIC with zero features
         pctWrongs[0] = 1 - np.mean(self._subsets['validate']['y'])
 
-        # find AIC value for best model with i features
         # loops over number of features in model
         for i in range(P):
 
@@ -192,7 +187,6 @@ class LogisticClassifier:
                 currentIncludeMask[feature+1] = 1
 
                 # train on currentIncludeMask
-                self._theta = np.zeros((P+1, 1))
                 self.train(includeMask=currentIncludeMask)
 
                 # calculate percent wrong on validation set
@@ -209,29 +203,63 @@ class LogisticClassifier:
             include.append(bestFeature)
             includeMask[bestFeature] = 1
 
-        # find minimum of percentWrongs
+        # find minimum of pctWrongs
         bestNumFeatures = np.argwhere(pctWrongs == np.min(pctWrongs))[0,0]
         bestIncludeMask = np.zeros((P+1, 1))
         bestIncludeMask[0] = 1
         for i in range(bestNumFeatures):
             bestIncludeMask[include[i]+1] = 1
 
-        # retrain with best include mask, return beta
-        self._theta = np.zeros((P+1, 1))
+        # retrain with best include mask, return theta
         self.train(includeMask=bestIncludeMask)
         return self._theta
 
+    def l2Regularize(self):
+        lams = np.logspace(-20, 10, 100)
+
+        # standardize
+        self._subsets['train']['X'] = preprocessing.StandardScaler().fit(self._subsets['train']['X']).transform(self._subsets['train']['X'])
+        self._subsets['validate']['X'] = preprocessing.StandardScaler().fit(self._subsets['validate']['X']).transform(self._subsets['validate']['X'])
+        self._subsets['test']['X'] = preprocessing.StandardScaler().fit(self._subsets['test']['X']).transform(self._subsets['test']['X'])
+
+        # FIXME: this is terrible
+        P = self._subsets['train']['X'].shape[1] - 1
+        self._subsets['train']['X'][0,:] = np.ones((1, P+1))
+        self._subsets['validate']['X'][0,:] = np.ones((1, P+1))
+        self._subsets['test']['X'][0,:] = np.ones((1, P+1))
+
+        bestPctWrong, bestLambda = float('inf'), None
+        pctWrongs = np.zeros_like(lams)
+
+        for i, lam in enumerate(lams):
+            self._lambda = lam
+            # print(lam, self._lambda)
+            self.train()
+
+            pctWrong = self.pctWrong(subset='validate')
+            pctWrongs[i] = pctWrong
+            if pctWrong < bestPctWrong:
+                bestPctWrong = pctWrong
+                bestLambda = lam
+
+            print(f'lam: {lam}\tpctWrong: {pctWrong}')
+
+        print(bestPctWrong, bestLambda, pctWrongs)
+        self._lambda = bestLambda
+        self.train()
+        return self._theta
 
 # PART 1: RECREATE TABLE 4.2
 X = dataset.drop(['chd'], axis=1).to_numpy()
 y = dataset.loc[:, 'chd'].to_numpy().reshape(-1, 1)
 classifier = LogisticClassifier(X, y)
-# classifier.train(includeMask=np.array([[1,0,0,0,0,0,0,1]]).T)
-# classifier.train(includeMask=np.array([[1,1,1,1,1,1,1,1]]).T)
-
-# print(classifier.l(subset='train'), classifier.l(subset='validate'))
-
-# print(f'theta: {classifier.theta()}\n% classified wrong: {np.around(classifier.pctWrong() * 100)}%')
+classifier.train()
+print(f'theta: {classifier.theta()}\n% classified correct for unregularized: {np.around((1 - classifier.pctWrong()) * 100)}%')
 
 # PART 2: STEPWISE
 classifier.stepWise()
+print(f'theta: {classifier.theta()}\n% classified correct for stepwise: {np.around((1 - classifier.pctWrong()) * 100)}%')
+
+#PART 3: L2 REGULARIZATION
+classifier.l2Regularize()
+print(f'theta: {classifier.theta()}\n% classified correct for L2 regularized: {np.around((1 -classifier.pctWrong()) * 100)}%')
