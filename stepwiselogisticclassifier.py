@@ -9,7 +9,7 @@ from binarylogisticclassifier import BinaryLogisticClassifier
 
 class StepwiseLogisticClassifier(BinaryLogisticClassifier):
 
-    def stepWise(self):
+    def validate(self):
         _, P = self._subsets['train']['X'].shape
         P -= 1
 

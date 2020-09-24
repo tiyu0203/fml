@@ -9,7 +9,7 @@ from binarylogisticclassifier import BinaryLogisticClassifier
 
 class L2LogisticClassifier(BinaryLogisticClassifier):
 
-    def l2Regularize(self):
+    def validate(self):
         #create a bunch of lambdas in order to iterate through them
         lams = np.logspace(-20, 5, 100)
         

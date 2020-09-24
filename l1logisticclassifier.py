@@ -5,12 +5,12 @@ from tabulate import tabulate
 from sklearn import preprocessing
 import seaborn as sb
 
-from baselogisticclassifier import LogisticClassifier
+from binarylogisticclassifier import BinaryLogisticClassifier
 
 # taken mostly literally from (Tsuruoka et al., 2009); involves an
 # estimate of the gradient of the L1 norm (abs function) that involves
 # some "memory" for improved performance
-class L1LogisticClassifier(LogisticClassifier):
+class L1LogisticClassifier(BinaryLogisticClassifier):
 
     # apply this after Adam update rule (would be difficult to incorporate with Adam)
     def applyL1Penalty(self):
@@ -26,8 +26,7 @@ class L1LogisticClassifier(LogisticClassifier):
                 self._theta[i,0] = min(0., theta_i + (self._u + self._q[i]))
             self._q[i] += theta_i - z
 
-    # taken very literally from (Tsuruoka et al., 2009)
-    def l1RegularizationTrain(self, iterations=2000):
+    def validate(self, iterations=2000):
         # undo l2 regularization
         self._lambda = 0.
 

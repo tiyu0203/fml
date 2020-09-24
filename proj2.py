@@ -44,12 +44,12 @@ print(f'theta: {binaryClassifier.theta()}\n% classified correct for unregularize
 
 # PART 2: STEPWISE
 stepwiseClassifier = StepwiseLogisticClassifier(None, None, copySubsetsFrom=binaryClassifier)
-stepwiseClassifier.stepWise()
+stepwiseClassifier.validate()
 print(f'theta: {stepwiseClassifier.theta()}\n% classified correct for stepwise: {np.around((1 - stepwiseClassifier.pctWrong()) * 100)}%')
 
 #PART 3: L2 REGULARIZATION
 l2Classifier = L2LogisticClassifier(None, None, copySubsetsFrom=binaryClassifier)
-l2Classifier.l2Regularize()
+l2Classifier.validate()
 print(f'theta: {l2Classifier.theta()}\n% classified correct for L2 regularized: {np.around((1 - l2Classifier.pctWrong()) * 100)}%')
 
 # Unregularize converges to slightly higher number than regularized
@@ -57,7 +57,7 @@ term = list(sahdDataset.columns.values[:-1])
 
 # STRETCH GOAL 1: L1 REGULARIZATION
 l1Classifier = L1LogisticClassifier(None, None, copySubsetsFrom=binaryClassifier)
-bestC, coefficients = l1Classifier.l1RegularizationTrain()
+bestC, coefficients = l1Classifier.validate()
 cIterations = np.logspace(-15, 0, 100)
 plt.figure()
 plt.plot(cIterations, coefficients[:,1:])

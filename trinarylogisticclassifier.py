@@ -5,10 +5,10 @@ from tabulate import tabulate
 from sklearn import preprocessing
 import seaborn as sb
 
-from baselogisticclassifier import LogisticClassifier
+from baselogisticclassifier import BaseLogisticClassifier
 
 # multinomial case, hardcoded for K=3; uses simple SGD rather than Adam
-class TrinaryLogisticClassifier(LogisticClassifier):
+class TrinaryLogisticClassifier(BaseLogisticClassifier):
 
     # returns NxK matrix, where each row is the predicted probabilities
     # of each of the K classes
