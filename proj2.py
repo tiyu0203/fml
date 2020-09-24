@@ -150,13 +150,13 @@ class LogisticClassifier:
     def l(self, subset):
         X, y = self._subsets[subset]['X'], self._subsets[subset]['y']
         #print('TESTING SHAPE', y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lambda * (self._theta[1:,:] ** 2)).shape)
-        return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) - (self._lambda * (self._theta[1:,:] ** 2))
+        return y.T @ np.log(self.h(X)) + (1 - y).T @ np.log(1 - self.h(X)) #- (self._lambda * (self._theta[1:,:] ** 2))
 
     # percent classified wrong on training subset
     def pctWrong(self, subset='test'):
         X, y = self._subsets[subset]['X'], self._subsets[subset]['y']
         N, _ = X.shape
-        return np.sum(np.abs(np.round(self.h(X)) - y)) / N
+        return np.sum(np.round(np.abs(self.h(X) - y))) / N
 
     def step(self, includeMask=None):
         # update adam moments
@@ -174,32 +174,28 @@ class LogisticClassifier:
             self._theta *= includeMask
 
     def train(self, iterations=2000, includeMask=None):
+        self._loglikelihoods = np.zeros(iterations)
+
         self._theta = np.zeros((self._subsets['train']['X'].shape[1], 1))
         # trainLikelihood = np.zeros((iterations, 1))
         # validateLikelihood = np.zeros((iterations,1))
         for i in range(iterations):
             self.step(includeMask)
-        #     trainLikelihood[i] = np.mean(self.l(subset = 'train'))
-        #     validateLikelihood[i] = np.mean(self.l(subset = 'validate'))
-        # if l2 == 0:
-        #   plt.plot(np.linspace(0, iterations, iterations),trainLikelihood)
-        #   plt.plot(np.linspace(0,iterations, iterations),validateLikelihood)
-        #   plt.legend(['Training loglikelihood', 'Validate loglikelihood'])
-        #   plt.show()
-        # else:
-        #   pass
+
+            self._loglikelihoods[i] = self.l(subset='train')
+
             # if i % 1000 == 0:
             #     print(f'iteration {i}\tclassified wrong: {np.around(self.pctWrong(),2)}\tlog likelihood: {np.around(self.l(subset="train"),2)}')
 
-    def plotIterations(self, iterations=2000):
-        for i in range(iterations):
-            trainLikelihood[i] = np.mean(self.l(subset = 'train'))
-            validateLikelihood[i] = np.mean(self.l(subset = 'validate'))
+    def getLogLikelihoods(self):
+        return self._loglikelihoods
 
-        plt.plot(np.linspace(0, iterations, iterations),trainLikelihood)
-        plt.plot(np.linspace(0,iterations, iterations),validateLikelihood)
-        plt.legend(['Training loglikelihood', 'Validate loglikelihood'])
-        plt.show() 
+    def plotLoglikelihood(self):
+        iterations = range(0,2000)
+        plt.figure()
+        plt.plot(iterations, self._loglikelihoods)
+        plt.xlabel('Iterations')
+        plt.ylabel('Loglikelihoods') 
 
     def theta(self):
         return self._theta
@@ -257,7 +253,7 @@ class LogisticClassifier:
         # retrain with best include mask, return theta
         self.train(includeMask=bestIncludeMask)
         return self._theta, include[:bestNumFeatures]
-
+    
     def l2Regularize(self):
         #create a bunch of lambdas in order to iterate through them
         lams = np.logspace(-20, 5, 100)
@@ -302,6 +298,10 @@ class LogisticClassifier:
     # apply this after Adam update rule (would be difficult to incorporate with Adam)
     def applyL1Penalty(self):
         for i, theta_i in enumerate(self._theta.reshape(-1)):
+            # start from 1 to not penalize the bias
+            if i == 0:
+                continue
+
             z = theta_i
             if theta_i > 0:
                 self._theta[i,0] = max(0., theta_i - (self._u + self._q[i]))
@@ -310,27 +310,113 @@ class LogisticClassifier:
             self._q[i] += theta_i - z
 
     # taken very literally from (Tsuruoka et al., 2009)
-    def l1RegularizationTrain(self, iterations=2000, includeMask=None):
+    def l1RegularizationTrain(self, iterations=2000):
+        # undo l2 regularization
+        self._lambda = 0.
+
+        # l1 regularization parameter; C is the letter used in the text
+        cIteration = np.logspace(-15, 0, 100)
+        bestPctWrong, bestC = float('inf'), None
+        pctWrongs = np.zeros_like(cIteration)
+
+        # includes bias for now
+        coefficients = np.zeros((cIteration.size, self._theta.size))
+
+        # batch size; for now we use the entire dataset
+        self._N = self._subsets['train']['X'].shape[0]
+        for j, c in enumerate(cIteration):
+            self._C = c
+            self._u = 0.
+            self._q = np.zeros_like(self._theta).reshape(-1)
+            self._theta = np.zeros((self._subsets['train']['X'].shape[1], 1))
+
+            # training loop -- don't use ordinary self.train here
+            for _ in range(iterations):
+                self._u += self._alpha * self._C / self._N
+                self.step()
+                self.applyL1Penalty()
+            coefficients[j,:] = self._theta.reshape(-1)
+            pctWrong = self.pctWrong(subset='validate')
+            pctWrongs[j] = pctWrong
+            if pctWrong < bestPctWrong:
+                bestPctWrong = pctWrong
+                bestC = c
+
+            #print(f'c = {c}, pctWrong: {pctWrong}')
+
+        self._C = bestC
+
+        # retrain with best C
         self._u = 0.
         self._q = np.zeros_like(self._theta).reshape(-1)
         self._theta = np.zeros((self._subsets['train']['X'].shape[1], 1))
 
-        # l1 regularization parameter; C is the letter used in the text
-        self._C = 0.1
-
-        # batch size; for now we use the entire dataset
-        self._N = self._subsets['train']['X'].shape[0]
-
+        # training loop -- don't use ordinary self.train here
         for i in range(iterations):
             self._u += self._alpha * self._C / self._N
-            self.step(includeMask)
+            self.step()
             self.applyL1Penalty()
 
-# PART 1: RECREATE TABLE 4.2
+        return self._C, coefficients
+
+    # for 3-class classifier
+    # returns NxK matrix, where each row is the predicted probabilities
+    # of each of the K classes
+    def hTrinary(self, X):
+        # print(X.shape, self._theta1.shape)
+
+        a1 = np.exp(X @ self._theta1)
+        a2 = np.exp(X @ self._theta2)
+        return np.hstack((a1/(1+a1+a2), a2/(1+a1+a2), 1/(1+a1+a2)))
+
+    # for 3-class classifier
+    # returns (gradTheta1, gradTheta2)
+    def gradTrinary(self):
+        # ordinary 
+        # return X.T @ (y - self.h(X)) - 2 * self._lambda * np.vstack((np.zeros((1,1)), self._theta[1:,:]))
+        # (N x (P+1)).T @ (N x 1) => P x 1
+        X, y = self._subsets['train']['X'], self._subsets['train']['y']
+        P = X.shape[1] - 1
+        
+        # eq. 4.109 (p. 209) of "Pattern Recognition and Machine Learning"
+        # but a little vectorized
+        grads = np.zeros((P+1, 2))
+        for j in range(2):
+            grads[:,j] = X.T @ (y[:,j] - self.hTrinary(X)[:,j])
+        return grads
+
+    # hardcoded 3-class classifier (e.g., for UCI Iris dataset)
+    def trinaryClassificationTrain(self, iterations=2000):
+        N, P = self._subsets['train']['X'].shape
+        P -= 1
+
+        # do the binary classification problem K-1 times
+        # (K is the number of classes; here, K=3)
+        self._theta1 = np.zeros((P+1, 1))
+        self._theta2 = np.zeros((P+1, 1))
+
+        for i in range(iterations):
+            # use basic sgd
+            grads = self.gradTrinary()
+            # print(self._theta1.shape, grads[:,0].shape)
+            self._theta1 += self._alpha * grads[:,0][:,np.newaxis]
+            self._theta2 += self._alpha * grads[:,1][:,np.newaxis]
+
+            # get percent wrong
+            X, y = self._subsets['train']['X'], self._subsets['train']['y']
+            pctWrong = np.sum(np.round(np.abs(np.argmax(self.hTrinary(X), axis=1) - np.argmax(y, axis=1)))) / N
+            print(pctWrong)
+
+        print(np.around(np.hstack((self.hTrinary(X), y)), 1))
+
+        return self._theta1, self._theta2
+
+# PART 1: RECREATE TABLE 4.
 X = dataset.drop(['chd'], axis=1).to_numpy()
 y = dataset.loc[:, 'chd'].to_numpy().reshape(-1, 1)
 classifier = LogisticClassifier(X, y)
 classifier.train()
+#classifier.plotIterations()
 print(f'theta: {classifier.theta()}\n% classified correct for unregularized: {np.around((1 - classifier.pctWrong()) * 100)}%')
 
 # PART 2: STEPWISE
@@ -342,5 +428,27 @@ print(f'theta: {classifier.theta()}\n% classified correct for unregularized: {np
 # print(f'theta: {classifier.theta()}\n% classified correct for L2 regularized: {np.around((1 -classifier.pctWrong()) * 100)}%')
 
 #unregularize converge to slightly higher number than regularized
-classifier.l1RegularizationTrain()
-print(f'theta: {classifier.theta()}\n% classified correct for L1 regularized: {np.around((1 - classifier.pctWrong()) * 100)}%')
+# term = list(dataset.columns.values[:-1])
+
+# bestC, coefficients = classifier.l1RegularizationTrain()
+# cIterations = np.logspace(-15, 0, 100)
+# plt.figure()
+# plt.plot(cIterations, coefficients[:,1:])
+# plt.xlabel('Lambdas')
+# plt.ylabel('λ')
+# plt.title('Lasso Coefficients')
+
+# iris dataset for multiclass
+irisDs = pd.read_csv('iris.data')
+
+# one-hot encoded labels
+irisy = np.vstack((
+    (irisDs.iloc[:,4] == 'Iris-setosa').to_numpy(dtype=np.float32),
+    (irisDs.iloc[:,4] == 'Iris-versicolor').to_numpy(dtype=np.float32),
+    (irisDs.iloc[:,4] == 'Iris-virginica').to_numpy(dtype=np.float32))).T
+
+# feature matrix
+irisX = irisDs.iloc[:,:4].to_numpy()
+
+irisCls = LogisticClassifier(irisX, irisy)
+irisCls.trinaryClassificationTrain()
