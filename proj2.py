@@ -38,6 +38,7 @@ sahdDatasety = sahdDataset.loc[:, 'chd'].to_numpy().reshape(-1, 1)
 
 # PART 1: RECREATE TABLE 4.
 binaryClassifier = BinaryLogisticClassifier(sahdDatasetX, sahdDatasety)
+print(f'baseline: {binaryClassifier.baselinePctWrong()}')
 binaryClassifier.train()
 #binaryClassifier.plotIterations()
 print(f'theta: {binaryClassifier.theta()}\n% classified correct for unregularized: {np.around((1 - binaryClassifier.pctWrong()) * 100)}%')

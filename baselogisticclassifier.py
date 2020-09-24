@@ -15,7 +15,9 @@ class BaseLogisticClassifier:
     # alpha: (maximum) learning rate
     # copySubsetsFrom: treat this as a copy constructor, copy
     # over the subsets from a different BaseLogisticClassifier
-    def __init__(self, X, y, alpha=0.01, copySubsetsFrom=None):
+    def __init__(self, X, y, alpha=0.01,
+                 copySubsetsFrom=None,
+                 standardizeFeatures=False):
         self._alpha = alpha
         self._lambda = 0
 
@@ -74,6 +76,11 @@ class BaseLogisticClassifier:
         self._zthetaSquared = np.zeros_like(self._theta)
         # epsilon. Is a very small number to prevent any division by zero in the implementation (e.g. 10E-8).
         self._ep = 0.0001
+
+        if standardizeFeatures:
+            self._subsets['train']['X'] = preprocessing.StandardScaler().fit(self._subsets['train']['X']).transform(self._subsets['train']['X'])
+            self._subsets['validate']['X'] = preprocessing.StandardScaler().fit(self._subsets['validate']['X']).transform(self._subsets['validate']['X'])
+            self._subsets['test']['X'] = preprocessing.StandardScaler().fit(self._subsets['test']['X']).transform(self._subsets['test']['X'])
 
     def getLogLikelihoods(self):
         return self._loglikelihoods

@@ -36,6 +36,12 @@ class TrinaryLogisticClassifier(BaseLogisticClassifier):
         return np.sum(np.round(np.abs(np.argmax(self.h(X), axis=1) - \
             np.argmax(y, axis=1)))) / N
 
+    def baselinePctWrong(self):
+        self._theta1 = np.zeros_like(self._theta1)
+        self._theta2 = np.zeros_like(self._theta2)
+        # FIXME: what to do here?
+        return self.pctWrong()
+
     # hardcoded 3-class classifier (e.g., for UCI Iris dataset)
     def trinaryClassificationTrain(self, iterations=2000):
         N, P = self._subsets['train']['X'].shape

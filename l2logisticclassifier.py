@@ -9,16 +9,24 @@ from binarylogisticclassifier import BinaryLogisticClassifier
 
 class L2LogisticClassifier(BinaryLogisticClassifier):
 
+    # make sure to standardize features
+    def __init__(self, X, Y, alpha=0.01, copySubsetsFrom=None):
+        super().__init__(X, Y, alpha=alpha,
+                         copySubsetsFrom=copySubsetsFrom,
+                         standardizeFeatures=True)
+
+    # update function with L2 penalty
+    # theta_j := theta_j + alpha(y_i -h_theta(x_i)) * x_i_j
+    # returns (P+1)
+    # SGD =  j+α(y(i)−hθ(x(i)))x(i)j
+    def grad(self, X, y):
+        # don't penalize the bias
+        return X.T @ (y - self.h(X)) - 2 * self._lambda * np.vstack((np.zeros((1,1)), self._theta[1:,:]))
+
     def validate(self):
         #create a bunch of lambdas in order to iterate through them
         lams = np.logspace(-20, 5, 100)
         
-        # standardize
-        # whenever you regularize when weights are multplied times features you should normalize
-        self._subsets['train']['X'] = preprocessing.StandardScaler().fit(self._subsets['train']['X']).transform(self._subsets['train']['X'])
-        self._subsets['validate']['X'] = preprocessing.StandardScaler().fit(self._subsets['validate']['X']).transform(self._subsets['validate']['X'])
-        self._subsets['test']['X'] = preprocessing.StandardScaler().fit(self._subsets['test']['X']).transform(self._subsets['test']['X'])
-
         # FIXME: this is terrible
         #Removing the ones because we don't want to regularize the bias term
         P = self._subsets['train']['X'].shape[1] - 1
