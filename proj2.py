@@ -25,49 +25,6 @@ dataset['famhist'] = (dataset['famhist'] == 'Present')*1
 # plt.show()
 
 
-
-# shuffle and split training into 80% train, 10% validation, 10% test.
-# training, validation, test = np.split(dataset.sample(
-#     frac=1), [int(.8*len(dataset)), int(.9*len(dataset))])
-# prints out the length of each section of the dataset and the dataset itself
-# print("Length of dataset:", len(dataset))
-# print("Length of training:", len(training))
-# print("Length of validation:", len(validation))
-# print("Length of test:", len(test))
-
-
-
-# seperates the training, testing, and validation into x and y
-# famhist is the y, which is the last column
-# all but the last columns are the x data
-# iloc is Purely integer-location based indexing for selection by position.
-# x_train, y_train = training.iloc[:, :-1], training.iloc[:, -1]
-# x_test, y_test = test.iloc[:, :-1], test.iloc[:, -1]
-# x_val, y_val = validation.iloc[:, :-1], validation.iloc[:, -1]
-
-# normalize all the data
-# x_train = preprocessing.normalize(x_train, axis=0)
-# x_train = preprocessing.StandardScaler().fit(x_train).transform(x_train)
-# x_test = preprocessing.StandardScaler().fit(x_test).transform(x_test)
-# x_val = preprocessing.StandardScaler().fit(x_val).transform(x_val)
-
-# add a column of ones for the intercept
-# x_train = np.concatenate((np.ones((x_train.shape[0], 1)), x_train), axis=1)
-# x_test = np.concatenate((np.ones((x_test.shape[0], 1)), x_test), axis=1)
-# x_val = np.concatenate((np.ones((x_val.shape[0], 1)), x_val), axis=1)
-
-# # generate initial weight vector
-# N, P = x_train.shape
-# P -= 1
-# #initialize an array for theta
-# theta = np.zeros((P+1, 1))
-
-# theta = np.array([[-4.130, 0.006, 0.080, 0.185, 0.939, -0.035, 0.001, 0.043]]).T
-
-# reshape y_train
-#y_train = y_train.to_numpy().reshape((N, 1))
-
-
 # logistic classifier using SGD w/ Adam optimization
 class LogisticClassifier:
 
@@ -158,7 +115,7 @@ class LogisticClassifier:
         N, _ = X.shape
         return np.sum(np.round(np.abs(self.h(X) - y))) / N
 
-    def step(self, includeMask=None):
+    def step(self, iter, includeMask=None):
         # update adam moments
         thetaGrad = self.grad(self._subsets['train']['X'], self._subsets['train']['y'])
         # weighted average of the gradient
@@ -166,8 +123,12 @@ class LogisticClassifier:
         # weighted average of the square gradient
         self._zthetaSquared = self._beta2 * self._zthetaSquared + (1 - self._beta2) * thetaGrad ** 2
 
+        # bias-corrected moments
+        bcZTheta = self._ztheta / (1 - self._beta1 ** (iter + 1))
+        bcZThetaSquared = self._zthetaSquared / (1 - self._beta2 ** (iter + 1))
+
         # adam update rule
-        self._theta += self._alpha * self._ztheta / (np.sqrt(self._zthetaSquared) + self._ep)
+        self._theta += self._alpha * bcZTheta / (np.sqrt(bcZThetaSquared) + self._ep)
 
         # exclude certain features
         if includeMask is not None:
@@ -180,7 +141,7 @@ class LogisticClassifier:
         # trainLikelihood = np.zeros((iterations, 1))
         # validateLikelihood = np.zeros((iterations,1))
         for i in range(iterations):
-            self.step(includeMask)
+            self.step(i, includeMask)
 
             self._loglikelihoods[i] = self.l(subset='train')
 
@@ -331,9 +292,9 @@ class LogisticClassifier:
             self._theta = np.zeros((self._subsets['train']['X'].shape[1], 1))
 
             # training loop -- don't use ordinary self.train here
-            for _ in range(iterations):
+            for i in range(iterations):
                 self._u += self._alpha * self._C / self._N
-                self.step()
+                self.step(i)
                 self.applyL1Penalty()
             coefficients[j,:] = self._theta.reshape(-1)
             pctWrong = self.pctWrong(subset='validate')
@@ -354,7 +315,7 @@ class LogisticClassifier:
         # training loop -- don't use ordinary self.train here
         for i in range(iterations):
             self._u += self._alpha * self._C / self._N
-            self.step()
+            self.step(i)
             self.applyL1Penalty()
 
         return self._C, coefficients
@@ -424,19 +385,19 @@ print(f'theta: {classifier.theta()}\n% classified correct for unregularized: {np
 # print(f'theta: {classifier.theta()}\n% classified correct for stepwise: {np.around((1 - classifier.pctWrong()) * 100)}%')
 
 #PART 3: L2 REGULARIZATION
-# classifier.l2Regularize()
-# print(f'theta: {classifier.theta()}\n% classified correct for L2 regularized: {np.around((1 -classifier.pctWrong()) * 100)}%')
+classifier.l2Regularize()
+print(f'theta: {classifier.theta()}\n% classified correct for L2 regularized: {np.around((1 -classifier.pctWrong()) * 100)}%')
 
-#unregularize converge to slightly higher number than regularized
-# term = list(dataset.columns.values[:-1])
+# unregularize converge to slightly higher number than regularized
+term = list(dataset.columns.values[:-1])
 
-# bestC, coefficients = classifier.l1RegularizationTrain()
-# cIterations = np.logspace(-15, 0, 100)
-# plt.figure()
-# plt.plot(cIterations, coefficients[:,1:])
-# plt.xlabel('Lambdas')
-# plt.ylabel('λ')
-# plt.title('Lasso Coefficients')
+bestC, coefficients = classifier.l1RegularizationTrain()
+cIterations = np.logspace(-15, 0, 100)
+plt.figure()
+plt.plot(cIterations, coefficients[:,1:])
+plt.xlabel('Lambdas')
+plt.ylabel('λ')
+plt.title('Lasso Coefficients')
 
 # iris dataset for multiclass
 irisDs = pd.read_csv('iris.data')
@@ -451,4 +412,4 @@ irisy = np.vstack((
 irisX = irisDs.iloc[:,:4].to_numpy()
 
 irisCls = LogisticClassifier(irisX, irisy)
-irisCls.trinaryClassificationTrain()
+# irisCls.trinaryClassificationTrain()
